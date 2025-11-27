@@ -1,0 +1,26 @@
+# Arduino IDE generated files
+*.ino.hex
+*.ino.bin
+*.elf
+*.lst
+*.map
+*.su
+*.eep
+*.s
+*.o
+
+# Operating system specific files
+.DS_Store
+Thumbs.db
+
+# PlatformIO generated files (if using PlatformIO)
+.pio/
+.vscode/
+
+build/
+debug/
+release/
+*.tmp
+*.log
+
+data/*.json

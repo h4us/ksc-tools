@@ -1,0 +1,12 @@
+{
+    "ssid": "SSID_NAME",
+    "pw": "SSID_PASSWORD",
+    "osc_dest": "192.168.100.20",
+    "osc_tag_self": "/chamber_1",
+    "gpio_out_1_target": 1,
+    "gpio_out_1_range": [22.0, 28.0],
+    "gpio_out_2_target": 2,
+    "gpio_out_2_range": [65.0, 88.0],
+    "gpio_out_3_target": 0,
+    "gpio_out_3_range": [0.0, 0.0]
+}
