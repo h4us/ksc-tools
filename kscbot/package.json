@@ -1,0 +1,25 @@
+{
+  "name": "kscbot",
+  "version": "1.0.0-beta1",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^17.2.3",
+    "googleapis": "^166.0.0",
+    "libcamera": "^1.0.7",
+    "luxon": "^3.5.0",
+    "node-osc": "^11.0.0",
+    "twitter-api-v2": "^1.19.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}

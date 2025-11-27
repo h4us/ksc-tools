@@ -1,0 +1,14 @@
+DISCORD_TOKEN=${discord_token, string}
+DISCORD_CHANNEL_CAMERA=${dicod_channel_camera, string}
+
+X_APP_KEY=${x_api_key, string}
+X_APP_SECRET=${x_api_secret, string}
+X_APP_ACCESS_TOKEN=${x_api_access_token, string}
+X_APP_ACCESS_SECRET=${x_api_access_secret, string}
+
+GOOGLE_SPREADSHEET_ID=${google_spreadsheet_id, string}
+
+BOT_NAME=${bot_name, string, default='kscbot'}
+REGULAR_TASK_INTERVAL=${regular_task_interval, number, default=10}
+UPDATE_TRIG=${update_trig, string, default='internal'}
+WITH_RPI_CAMERA=${with_rpi_camera, number}
