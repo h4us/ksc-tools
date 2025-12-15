@@ -1,1 +1,3 @@
-TBA description
+# kscbot
+
+TBA more description
