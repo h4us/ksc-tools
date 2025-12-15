@@ -1,8 +1,10 @@
 # chamber-io
 
-esp32 based I/O controller
+Arduino - ESP32 based I/O controller for automation of our mushroom chambers
 
 ## Specs
+
+We are currently using seeed studio XIAO ESP32C6
 
 - Inputs
   - 1 I2C port, for a Temperature / Humidity sensor
@@ -15,7 +17,7 @@ esp32 based I/O controller
   - 1 Digital output port with external DC power supply, for water pumps
   - 1 PWM / Servo output port
 - Networking support
-  - Publishing periodically sensor values via OSC (OpenSoundControl)
+  - Publishing sensor values to the host computer periodically, via UDP / OSC (OpenSoundControl)
 
 ---
 

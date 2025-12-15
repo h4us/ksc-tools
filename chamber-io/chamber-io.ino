@@ -406,7 +406,7 @@ void adminModeLoop() {
   display.clear();
   display.setFont(ArialMT_Plain_10);
   display.setTextAlignment(TEXT_ALIGN_LEFT);
-  display.drawStringMaxWidth(0, 0, 128, "Current version does't support this mode");
+  display.drawStringMaxWidth(0, 0, 128, "Current version doesn't support this mode");
   display.display();
 }
 
