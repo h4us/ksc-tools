@@ -588,11 +588,61 @@ void loop() {
                      WiFi.localIP().toString());
     }
 
+    if (connected) OscWiFi.update();
+
+    // -- GPIO ops, TODO:
+    gpio_in_1 = digitalRead(D3);
+
+    if (relay_target == 1) {
+      if ((hour(_n) % relay_test_interval_hours) == 0 && minute(_n) < 3) {
+        gpio_out_relay = 1;
+      }
+    }
+
+    // gpio_out_relay = gpio_in_1 ? 0 : gpio_out_relay;
+    gpio_out_relay = !gpio_in_1 ? 0 : gpio_out_relay;
+
+    if (gpio_out_1_target == FOLLOW_T_TEMP) {
+      if (temp < gpio_out_1_range[0]) gpio_out_1_edge = -1;
+      if (temp > gpio_out_1_range[1]) gpio_out_1_edge = 1;
+      gpio_out_1 = ((temp < gpio_out_1_range[0] || temp < gpio_out_1_range[1]) && gpio_out_1_edge < 1);
+    } else if (gpio_out_1_target == FOLLOW_T_HUMID) {
+      if (humid < gpio_out_1_range[0]) gpio_out_1_edge = -1;
+      if (humid > gpio_out_1_range[1]) gpio_out_1_edge = 1;
+      gpio_out_1 = ((humid < gpio_out_1_range[0] || humid < gpio_out_1_range[1]) && gpio_out_1_edge < 1);
+    }
+
+    if (gpio_out_2_target == FOLLOW_T_TEMP) {
+      if (temp < gpio_out_2_range[0]) gpio_out_2_edge = -1;
+      if (temp > gpio_out_2_range[1]) gpio_out_2_edge = 1;
+      gpio_out_2 = ((temp < gpio_out_2_range[0] || temp < gpio_out_2_range[1]) && gpio_out_2_edge < 1);
+    } else if (gpio_out_2_target == FOLLOW_T_HUMID) {
+      if (humid < gpio_out_2_range[0]) gpio_out_2_edge = -1;
+      if (humid > gpio_out_2_range[1]) gpio_out_2_edge = 1;
+      gpio_out_2 = ((humid < gpio_out_2_range[0] || humid < gpio_out_2_range[1]) && gpio_out_2_edge < 1);
+    }
+
+    if (gpio_out_3_target == FOLLOW_T_TEMP) {
+      if (temp < gpio_out_3_range[0]) gpio_out_3_edge = -1;
+      if (temp > gpio_out_3_range[1]) gpio_out_3_edge = 1;
+      gpio_out_3 = ((temp < gpio_out_3_range[0] || temp < gpio_out_3_range[1]) && gpio_out_3_edge < 1);
+    } else if (gpio_out_3_target == FOLLOW_T_HUMID) {
+      if (humid < gpio_out_3_range[0]) gpio_out_3_edge = -1;
+      if (humid > gpio_out_3_range[1]) gpio_out_3_edge = 1;
+      gpio_out_3 = ((humid < gpio_out_3_range[0] || humid < gpio_out_3_range[1]) && gpio_out_3_edge < 1);
+    }
+
+    digitalWrite(RELAY_OUT, gpio_out_relay);
+    digitalWrite(TRIG_OUT_1, gpio_out_1);
+    digitalWrite(TRIG_OUT_2, gpio_out_2);
+    digitalWrite(TRIG_OUT_3, gpio_out_3);
+    // --
+
+    // -- TODO:
     display.clear();
     display.setFont(ArialMT_Plain_10);
     display.setTextAlignment(TEXT_ALIGN_LEFT);
 
-    // -- TODO:
     switch (ecbt.position()) {
     case 0:
       if (dht20_available) {
@@ -660,57 +710,32 @@ void loop() {
       display.drawStringMaxWidth(0, 12 * 3, 128, "VERSION: " + String(CHAMBER_IO_VERSION));
       break;
     }
+
+    if (gpio_out_relay) {
+      display.fillRect(0, 12 * 4 + 6, 10, 10);
+    } else {
+      display.drawRect(0, 12 * 4 + 6, 10, 10);
+    }
+
+    if (gpio_out_1) {
+      display.fillRect(12 * 2, 12 * 4 + 6, 10, 10);
+    } else {
+      display.drawRect(12 * 2, 12 * 4 + 6, 10, 10);
+    }
+
+    if (gpio_out_2) {
+      display.fillRect(12 * 3, 12 * 4 + 6, 10, 10);
+    } else {
+      display.drawRect(12 * 3, 12 * 4 + 6, 10, 10);
+    }
+
+    if (gpio_out_3) {
+      display.fillRect(12 * 4, 12 * 4 + 6, 10, 10);
+    } else {
+      display.drawRect(12 * 4, 12 * 4 + 6, 10, 10);
+    }
+
     display.display();
-    // --
-
-    if (connected) OscWiFi.update();
-
-    // -- GPIO ops, TODO:
-    gpio_in_1 = digitalRead(D3);
-
-    if (relay_target == 1) {
-      if ((hour(_n) % relay_test_interval_hours) == 0 && minute(_n) < 3) {
-        gpio_out_relay = 1;
-      }
-    }
-
-    // gpio_out_relay = gpio_in_1 ? 0 : gpio_out_relay;
-    gpio_out_relay = !gpio_in_1 ? 0 : gpio_out_relay;
-
-    if (gpio_out_1_target == FOLLOW_T_TEMP) {
-      if (temp < gpio_out_1_range[0]) gpio_out_1_edge = -1;
-      if (temp > gpio_out_1_range[1]) gpio_out_1_edge = 1;
-      gpio_out_1 = ((temp < gpio_out_1_range[0] || temp < gpio_out_1_range[1]) && gpio_out_1_edge < 1);
-    } else if (gpio_out_1_target == FOLLOW_T_HUMID) {
-      if (humid < gpio_out_1_range[0]) gpio_out_1_edge = -1;
-      if (humid > gpio_out_1_range[1]) gpio_out_1_edge = 1;
-      gpio_out_1 = ((humid < gpio_out_1_range[0] || humid < gpio_out_1_range[1]) && gpio_out_1_edge < 1);
-    }
-
-    if (gpio_out_2_target == FOLLOW_T_TEMP) {
-      if (temp < gpio_out_2_range[0]) gpio_out_2_edge = -1;
-      if (temp > gpio_out_2_range[1]) gpio_out_2_edge = 1;
-      gpio_out_2 = ((temp < gpio_out_2_range[0] || temp < gpio_out_2_range[1]) && gpio_out_2_edge < 1);
-    } else if (gpio_out_2_target == FOLLOW_T_HUMID) {
-      if (humid < gpio_out_2_range[0]) gpio_out_2_edge = -1;
-      if (humid > gpio_out_2_range[1]) gpio_out_2_edge = 1;
-      gpio_out_2 = ((humid < gpio_out_2_range[0] || humid < gpio_out_2_range[1]) && gpio_out_2_edge < 1);
-    }
-
-    if (gpio_out_3_target == FOLLOW_T_TEMP) {
-      if (temp < gpio_out_3_range[0]) gpio_out_3_edge = -1;
-      if (temp > gpio_out_3_range[1]) gpio_out_3_edge = 1;
-      gpio_out_3 = ((temp < gpio_out_3_range[0] || temp < gpio_out_3_range[1]) && gpio_out_3_edge < 1);
-    } else if (gpio_out_3_target == FOLLOW_T_HUMID) {
-      if (humid < gpio_out_3_range[0]) gpio_out_3_edge = -1;
-      if (humid > gpio_out_3_range[1]) gpio_out_3_edge = 1;
-      gpio_out_3 = ((humid < gpio_out_3_range[0] || humid < gpio_out_3_range[1]) && gpio_out_3_edge < 1);
-    }
-
-    digitalWrite(RELAY_OUT, gpio_out_relay);
-    digitalWrite(TRIG_OUT_1, gpio_out_1);
-    digitalWrite(TRIG_OUT_2, gpio_out_2);
-    digitalWrite(TRIG_OUT_3, gpio_out_3);
     // --
   }
 }
