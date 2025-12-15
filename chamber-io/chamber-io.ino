@@ -12,14 +12,18 @@
 #include <TimeLib.h>
 
 
+#define CHAMBER_IO_VERSION "0.9.9"
+
 #define XIAO_SDA D4
 #define XIAO_SCL D5
-#define GPIO_AVAILABLE_N 4
+#define PAGE_AVAILABLE_N 5
+#define CONFIG_AVAILABLE_N 6
 #define RELAY_OUT D6
 #define SERVO_OUT D7
 #define TRIG_OUT_1 D8
 #define TRIG_OUT_2 D9
 #define TRIG_OUT_3 D10
+
 
 DHT20 DHT;
 //          +--------------+
@@ -38,12 +42,10 @@ Adafruit_AHTX0 AHT;
 //          +----------------+
 
 SSD1306Wire display(0x3c, XIAO_SDA, XIAO_SCL);  // ADDRESS, SDA, SCL
-// OLEDDisplayUi ui( &display );
 
 EncoderButton ecbt(D1, D2, D0);
 
 uint32_t lastPing, lastRead;
-uint8_t mode = 0;
 
 volatile uint8_t gpio_out_1 = 0;
 uint8_t gpio_out_1_target = 1;
@@ -60,81 +62,75 @@ uint8_t gpio_out_3_target = 0;
 float gpio_out_3_range[] = {0.0, 0.0};
 int8_t gpio_out_3_edge = 0;
 
-// uint8_t relay_out = 0;
-volatile uint8_t relay_out = 0;
-uint8_t relay_target = 0;
+volatile uint8_t gpio_out_relay = 0;
+uint8_t relay_target = 1;
 int relay_test_interval_hours = 2;
 uint8_t gpio_in_1 = 0;
 
 String labels[] = { "NONE", "TEMPERATURE", "HUMIDITY" };
-String labels_relay[] = { "REMOTE", "INTERNAL", "INTERNAL_ONLY" };
+String labels_relay[] = {"REMOTE", "INTERNAL", "MANUAL"};
+String labels_config[] = {
+  "GPIO_OUT_1 [ LO ]", "GPIO_OUT_1 [ HI ]",
+  "GPIO_OUT_2 [ LO ]", "GPIO_OUT_2 [ HI ]",
+  "GPIO_OUT_3 [ LO ]", "GPIO_OUT_3 [ HI ]"
+};
 
-volatile bool connected, dht20_available, am2301_available = false;
+enum ModeLabel { MODE_DEFAULT, MODE_CONFIG, MODE_ADMIN };
+ModeLabel current_mode = MODE_DEFAULT;
+
+enum SubModeLabel { SUBMODE_DEFAULT, SUBMODE_EDIT };
+SubModeLabel current_submode = SUBMODE_DEFAULT;
+uint8_t submodeEditIndex = 0;
+
+enum FollowTarget { FOLLOW_T_NONE, FOLLOW_T_TEMP, FOLLOW_T_HUMID };
+
+bool connected, dht20_available, am2301_available = false;
 
 float humid, temp;
 
-// --
 String ssid = "SSID";
 String pw = "PASSWORD";
 String osc_dest = "192.168.100.20";
 String osc_tag_self = "/chamber_1";
-//--
 
-void onEncoder(EncoderButton& eb) {
-  // Serial.println(eb.increment());
-  // Serial.println(eb.position());
 
-  if (eb.position() > GPIO_AVAILABLE_N + 1) {
-    eb.resetPosition(0);
-  } else if (eb.position() < 0) {
-    eb.resetPosition(GPIO_AVAILABLE_N + 1);
+void onGotIp(WiFiEvent_t event, WiFiEventInfo_t info) {
+  Serial.println("WiFi connected");
+  Serial.println(IPAddress(info.got_ip.ip_info.ip.addr));
+
+  connected = true;
+}
+
+void onWifiDisconnected(WiFiEvent_t event, WiFiEventInfo_t info) {
+  connected = WiFi.isConnected();;
+
+  if (!connected) {
+    Serial.println("WiFi disconnected");
+    WiFi.disconnect(true);
+    WiFi.begin(ssid, pw);
   }
 }
 
-void onBtnClick(EncoderButton& eb) {
-  // Serial.println(eb.clickCount());
-
-  if (eb.clickCount() == 1) { // -- single click
-    if (eb.position() == 1) {
-      gpio_out_1 = (gpio_out_1 + 1) % 2;
-    } else if (eb.position() == 2) {
-      gpio_out_2 = (gpio_out_2 + 1) % 2;
-    } else if (eb.position() == 3) {
-      gpio_out_3 = (gpio_out_3 + 1) % 2;
-    } else {
-      relay_out = (relay_out + 1) % 2;
-    }
-  } else if (eb.clickCount() >= 2) { // -- double click
-    if (eb.position() == 1) {
-      gpio_out_1_target = (gpio_out_1_target + 1) % 3;
-    } else if (eb.position() == 2) {
-      gpio_out_2_target = (gpio_out_2_target + 1) % 3;
-    } else if (eb.position() == 3) {
-      gpio_out_3_target = (gpio_out_3_target + 1) % 3;
-    } else if (eb.position() == 4) {
-      relay_target = (relay_target + 1) % 3;
-    }
-  }
-}
-
-void onOscReceived(const OscMessage& m) {
-    // Serial.print(m.remoteIP());
-    // Serial.print(" ");
-    // Serial.print(m.remotePort());
-    // Serial.print(" ");
-    // Serial.print(m.size());
-    // Serial.print(" ");
-    // Serial.print(m.address());
-    // Serial.print(" ");
-    // Serial.print(m.arg<int>(0));
-    // Serial.print(" ");
-    // Serial.print(m.arg<float>(1));
-    // Serial.print(" ");
-    // Serial.print(m.arg<String>(2));
-    // Serial.println();
+void onOscReceived(const OscMessage &m) {
+  // -- TODO:
+  // Serial.print(m.remoteIP());
+  // Serial.print(" ");
+  // Serial.print(m.remotePort());
+  // Serial.print(" ");
+  // Serial.print(m.size());
+  // Serial.print(" ");
+  // Serial.print(m.address());
+  // Serial.print(" ");
+  // Serial.print(m.arg<int>(0));
+  // Serial.print(" ");
+  // Serial.print(m.arg<float>(1));
+  // Serial.print(" ");
+  // Serial.print(m.arg<String>(2));
+  // Serial.println();
 
   if (m.address() == "/cmd/pump" && m.size() > 0) {
-    if (relay_target < 2) relay_out = m.arg<int>(0);
+    if (relay_target < 2)
+      gpio_out_relay = m.arg<int>(0);
   }
 
   if (m.address() == "/sync" && m.size() > 2) {
@@ -192,7 +188,7 @@ bool readConfig(String config_filename = "/config.json") {
     return false;
   }
 
-  // TODO:
+  // -- TODO:
   const String _ssid = doc["ssid"];
   const String _pw = doc["pw"];
   const String _osc_dest = doc["osc_dest"];
@@ -220,40 +216,242 @@ bool readConfig(String config_filename = "/config.json") {
   return true;
 }
 
-bool saveConfig(String config_filename = "/config.json") {
-  // StaticJsonDocument<1024> doc;
+bool saveConfig(bool partial = true,  String config_filename = "/config.json") {
+  String file_content = readFile(config_filename);
 
-  // doc["ssid"] = ssid;
-  // doc["pw"] = pw;
-  // doc["osc_dest"] = osc_dest;
+  int config_file_size = file_content.length();
+  Serial.println("Config file size: " + String(config_file_size));
 
-  // String tmp = "";
-  // serializeJson(doc, tmp);
-  // writeFile(config_filename, tmp);
+  if(config_file_size > 1024) {
+    Serial.println("Config file too large");
+    return false;
+  } else {
+    Serial.println(file_content);
+  }
+
+  StaticJsonDocument<1024> doc;
+  auto error = deserializeJson(doc, file_content);
+  if ( error ) {
+    Serial.println("Error interpreting config file");
+    return false;
+  }
+
+  doc["gpio_out_1_range"][0] = gpio_out_1_range[0];
+  doc["gpio_out_1_range"][1] = gpio_out_1_range[1];
+  doc["gpio_out_2_range"][0] = gpio_out_2_range[0];
+  doc["gpio_out_2_range"][1] = gpio_out_2_range[1];
+  doc["gpio_out_3_range"][0] = gpio_out_3_range[0];
+  doc["gpio_out_3_range"][1] = gpio_out_3_range[1];
+
+  if (!partial) {
+    // -- TODO:
+  }
+
+  String tmp = "";
+  serializeJson(doc, tmp);
+  writeFile(config_filename, tmp);
 
   return true;
 }
 
-void onGotIp(WiFiEvent_t event, WiFiEventInfo_t info) {
-  Serial.println("WiFi connected");
-  Serial.println(IPAddress(info.got_ip.ip_info.ip.addr));
+void onEncoder(EncoderButton& eb) {
+  // Serial.println(eb.increment());
+  // Serial.println(eb.position());
+  if (current_mode == MODE_ADMIN) return;
 
-  connected = true;
-}
-
-void onWifiDisconnected(WiFiEvent_t event, WiFiEventInfo_t info) {
-  connected = WiFi.isConnected();;
-
-  if (!connected) {
-    Serial.println("WiFi disconnected");
-    WiFi.disconnect(true);
-    WiFi.begin(ssid, pw);
+  if (current_mode == MODE_CONFIG) {
+    if (current_submode == SUBMODE_DEFAULT) {
+      if (eb.position() > CONFIG_AVAILABLE_N - 1) {
+        eb.resetPosition(CONFIG_AVAILABLE_N - 1);
+      } else if (eb.position() < 0) {
+        eb.resetPosition(0);
+      }
+    }
+  } else {
+    if (eb.position() > PAGE_AVAILABLE_N) {
+      eb.resetPosition(PAGE_AVAILABLE_N);
+    } else if (eb.position() < 0) {
+      eb.resetPosition(0);
+    }
   }
 }
 
-void setup()
-{
-  pinMode(D3, INPUT_PULLUP);
+void onLongPress(EncoderButton &eb) {
+  if (current_mode == MODE_ADMIN) return;
+
+  if (current_mode == MODE_DEFAULT) {
+    eb.resetPosition(0);
+    current_mode = MODE_CONFIG;
+    current_submode = SUBMODE_DEFAULT;
+  } else {
+    saveConfig();
+    delay(1000);
+    eb.resetPosition(0);
+    current_mode = MODE_DEFAULT;
+  }
+}
+
+void onBtnClick(EncoderButton &eb) {
+  // Serial.println(eb.clickCount());
+  if (current_mode == MODE_ADMIN) return;
+
+  if (current_mode == MODE_CONFIG) {
+    configModeClickAction(eb);
+  } else {
+    defaultModeClickAction(eb);
+  }
+}
+
+void configModeClickAction(EncoderButton &eb) {
+  if (eb.clickCount() == 1) {
+    // -- single click: change submode
+    current_submode = (current_submode == SUBMODE_DEFAULT) ? SUBMODE_EDIT : SUBMODE_DEFAULT;
+    if (current_submode == SUBMODE_EDIT) {
+      eb.resetPosition(0);
+    } else {
+      eb.resetPosition(submodeEditIndex);
+    }
+  } else if (eb.clickCount() >= 2) {
+    // -- double click: change value & save
+    if (current_submode == SUBMODE_EDIT) {
+      float diff = eb.position() * 0.1;
+      switch (submodeEditIndex) {
+      case 0:
+        gpio_out_1_range[0] = gpio_out_1_range[0] + diff;
+        break;
+      case 1:
+        gpio_out_1_range[1] = gpio_out_1_range[1] + diff;
+        break;
+      case 2:
+        gpio_out_2_range[0] = gpio_out_2_range[0] + diff;
+        break;
+      case 3:
+        gpio_out_2_range[1] = gpio_out_2_range[1] + diff;
+        break;
+      case 4:
+        gpio_out_3_range[0] = gpio_out_3_range[0] + diff;
+        break;
+      case 5:
+        gpio_out_3_range[1] = gpio_out_3_range[1] + diff;
+      default:
+        break;
+      }
+      eb.resetPosition(submodeEditIndex);
+      current_submode = SUBMODE_DEFAULT;
+    }
+  }
+}
+
+void defaultModeClickAction(EncoderButton &eb) {
+  if (eb.clickCount() == 1) {
+    // -- single click: change the current output value
+    if (eb.position() == 1) {
+      gpio_out_1 = (gpio_out_1 + 1) % 2;
+    } else if (eb.position() == 2) {
+      gpio_out_2 = (gpio_out_2 + 1) % 2;
+    } else if (eb.position() == 3) {
+      gpio_out_3 = (gpio_out_3 + 1) % 2;
+    } else {
+      gpio_out_relay = (gpio_out_relay + 1) % 2;
+    }
+  } else if (eb.clickCount() >= 2) {
+    // -- double click: change following target
+    if (eb.position() == 1) {
+      gpio_out_1_target = (gpio_out_1_target + 1) % 3;
+    } else if (eb.position() == 2) {
+      gpio_out_2_target = (gpio_out_2_target + 1) % 3;
+    } else if (eb.position() == 3) {
+      gpio_out_3_target = (gpio_out_3_target + 1) % 3;
+    } else if (eb.position() == 4) {
+      relay_target = (relay_target + 1) % 3;
+    }
+  }
+}
+
+void enableNetwork() {
+  WiFi.onEvent(onWifiDisconnected, WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  WiFi.onEvent(onGotIp, WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_GOT_IP);
+  // WiFi.setAutoReconnect(false);
+
+  WiFi.begin(ssid, pw);
+  connected = true;
+
+  int timeout = 0;
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println("Waiting connection..");
+
+    display.clear();
+    display.setFont(ArialMT_Plain_10);
+    display.setTextAlignment(TEXT_ALIGN_LEFT);
+    display.drawStringMaxWidth(0, 0, 128, "Waiting connection..");
+    display.display();
+
+    timeout++;
+    if (timeout > 40) {
+      connected = false;
+      break;
+    }
+  }
+
+  if (connected) {
+    OscWiFi.subscribe(12000, "/cmd", onOscReceived);
+    OscWiFi.subscribe(12000, "/sync", onOscReceived);
+  }
+}
+
+void adminModeLoop() {
+  // -- TODO:
+  display.clear();
+  display.setFont(ArialMT_Plain_10);
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  display.drawStringMaxWidth(0, 0, 128, "Current version does't support this mode");
+  display.display();
+}
+
+void configModeLoop() {
+  display.clear();
+  display.setFont(ArialMT_Plain_10);
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  float diff = 0.0;
+
+  if (current_submode == SUBMODE_DEFAULT) {
+    submodeEditIndex = constrain(ecbt.position(), 0, CONFIG_AVAILABLE_N - 1);
+    display.drawStringMaxWidth(0, 0, 128, "SELECT CONFIG:");
+  } else {
+    diff = ecbt.position() * 0.1;
+    display.drawStringMaxWidth(0, 0, 128, "EDIT CONFIG:");
+  }
+
+  float editTarget = gpio_out_1_range[0] + diff;
+  switch (submodeEditIndex) {
+  case 1:
+    editTarget = gpio_out_1_range[1] + diff;
+    break;
+  case 2:
+    editTarget = gpio_out_2_range[0] + diff;
+    break;
+  case 3:
+    editTarget = gpio_out_2_range[1] + diff;
+    break;
+  case 4:
+    editTarget = gpio_out_3_range[0] + diff;
+    break;
+  case 5:
+    editTarget = gpio_out_3_range[1] + diff;
+  default:
+    break;
+  }
+
+  display.drawStringMaxWidth(0, 12 * 1, 128, labels_config[submodeEditIndex]);
+  display.drawStringMaxWidth(0, 12 * 2, 128, String(editTarget));
+  display.display();
+}
+
+void setup() {
+  // pinMode(D3, INPUT_PULLUP);
+  pinMode(D3, INPUT_PULLDOWN);
   pinMode(RELAY_OUT, OUTPUT);
   // pinMode(SERVO_OUT, OUTPUT);
   pinMode(TRIG_OUT_1, OUTPUT);
@@ -290,7 +488,6 @@ void setup()
     }
   }
 
-  // Wire.begin();
   Wire.begin(XIAO_SDA, XIAO_SCL);
 
   dht20_available = DHT.begin();
@@ -299,44 +496,25 @@ void setup()
 
   delay(1000);
 
-  // ui.setTargetFPS(30);
-  // ui.init();
-
   display.init();
   display.flipScreenVertically();
   display.setFont(ArialMT_Plain_10);
 
+  ecbt.setLongClickDuration(2000);
   ecbt.setEncoderHandler(onEncoder);
   ecbt.setClickHandler(onBtnClick);
+  ecbt.setLongPressHandler(onLongPress);
+  ecbt.update();
 
-  WiFi.onEvent(onWifiDisconnected, WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
-  WiFi.onEvent(onGotIp, WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_GOT_IP);
-  // WiFi.setAutoReconnect(false);
-
-  WiFi.begin(ssid, pw);
-  connected = true;
-
-  int timeout = 0;
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.println("Waiting connection..");
-
+  if (ecbt.isPressed()) {
     display.setFont(ArialMT_Plain_10);
     display.setTextAlignment(TEXT_ALIGN_LEFT);
-    display.drawStringMaxWidth(0, 0, 128, "Waiting connection..");
+    display.drawStringMaxWidth(0, 0, 128, "Enter configuration mode..");
     display.display();
-
-    timeout ++;
-    if (timeout > 40) {
-      connected = false;
-      break;
-    }
-  }
-
-  if (connected) {
-    OscWiFi.subscribe(12000, "/cmd", onOscReceived);
-    OscWiFi.subscribe(12000, "/sync", onOscReceived);
+    delay(1000);
+    current_mode = MODE_ADMIN;
+  } else {
+    enableNetwork();
   }
 }
 
@@ -346,159 +524,193 @@ void loop() {
   int _h = hour(_n);
   int _m = minute(_n);
 
-  if (dht20_available && elapsed - DHT.lastRead() >= 3000) {
-    //  READ DATA, TODO:
-    uint32_t start = micros();
-    int status = DHT.read();
-    uint32_t stop = micros();
-
-    switch (status) {
-    case DHT20_OK:
-      humid = DHT.getHumidity();
-      temp = DHT.getTemperature();
-      if (connected) OscWiFi.send(osc_dest, 12000, osc_tag_self, humid, temp);
-      break;
-    case DHT20_ERROR_CHECKSUM:
-      Serial.println("Checksum error");
-      break;
-    case DHT20_ERROR_CONNECT:
-      Serial.println("Connect error");
-      break;
-    case DHT20_MISSING_BYTES:
-      Serial.println("Missing bytes");
-      break;
-    case DHT20_ERROR_BYTES_ALL_ZERO:
-      Serial.println("All bytes read zero");
-      break;
-    case DHT20_ERROR_READ_TIMEOUT:
-      Serial.println("Read time out");
-      break;
-    case DHT20_ERROR_LASTREAD:
-      Serial.println("Error read too fast");
-      break;
-    default:
-      Serial.println("Unknown error");
-      break;
-    }
-  }
-
-  if (am2301_available && elapsed - lastRead >= 3000) {
-    sensors_event_t t_humidity, t_temp;
-    AHT.getEvent(&t_humidity, &t_temp);
-
-    temp = t_temp.temperature;
-    humid = t_humidity.relative_humidity;
-
-    if (connected) OscWiFi.send(osc_dest, 12000, osc_tag_self, humid, temp);
-
-    lastRead = millis();
-  }
-
-  if (elapsed - lastPing >= 5000) {
-    lastPing = elapsed;
-    if (connected) OscWiFi.send(osc_dest, 12000, osc_tag_self + "/ping", WiFi.localIP().toString());
-  }
-
-  display.clear();
-  display.setFont(ArialMT_Plain_10);
-  display.setTextAlignment(TEXT_ALIGN_LEFT);
-
-  // TODO:
-  switch (ecbt.position()) {
-  case 0:
-    if (dht20_available) {
-      display.drawStringMaxWidth(0, 0, 128, "TEMPERATURE: " + String(temp, 2));
-      display.drawStringMaxWidth(0, 12 * 1, 128, "HUMIDITY: " + String(humid, 2));
-      display.drawStringMaxWidth(0, 12 * 2, 128, String(_h) + ":" + (_m < 10 ? "0" : "") + String(_m));
-    } else {
-      display.drawStringMaxWidth(0, 0, 128, "NO_SENSOR");
-      display.drawStringMaxWidth(0, 12 * 1, 128, String(_h) + ":" + (_m < 10 ? "0" : "") + String(_m));
-    }
-    if (!connected) { display.drawStringMaxWidth(0, 12 * 3, 128, ":WIFI_CON_FAILED"); }
-    break;
-  case 1:
-    display.drawStringMaxWidth(0, 0, 128, "GPIO_OUT_1: " + String(gpio_out_1));
-    if (gpio_out_1_target > 0) {
-      display.drawStringMaxWidth(0, 12 * 1, 128, "TARGET="  + labels[gpio_out_1_target]);
-      display.drawStringMaxWidth(0, 12 * 2, 128, "LO=" +  String(gpio_out_1_range[0], 2) + ", HI=" + String(gpio_out_1_range[1], 2));
-      display.drawStringMaxWidth(0, 12 * 3, 128, dht20_available ? (gpio_out_1_target == 1 ? String(temp, 2) : String(humid, 2)) : "NO_SENSOR");
-    }
-    break;
-  case 2:
-    display.drawStringMaxWidth(0, 0, 128, "GPIO_OUT_2: " + String(gpio_out_2));
-    if (gpio_out_2_target > 0) {
-      display.drawStringMaxWidth(0, 12 * 1, 128, "TARGET="  + labels[gpio_out_2_target]);
-      display.drawStringMaxWidth(0, 12 * 2, 128, "LO=" +  String(gpio_out_2_range[0], 2) + ", HI=" + String(gpio_out_2_range[1], 2));
-      display.drawStringMaxWidth(0, 12 * 3, 128, dht20_available ? (gpio_out_2_target == 1 ? String(temp, 2) : String(humid, 2)) : "NO_SENSOR");
-    }
-    break;
-  case 3:
-    display.drawStringMaxWidth(0, 0, 128, "GPIO_OUT_3: " + String(gpio_out_3));
-    if (gpio_out_3_target > 0) {
-      display.drawStringMaxWidth(0, 12 * 1, 128, "TARGET="  + labels[gpio_out_3_target]);
-      display.drawStringMaxWidth(0, 12 * 2, 128, "LO=" +  String(gpio_out_3_range[0], 2) + ", HI=" + String(gpio_out_3_range[1], 2));
-      display.drawStringMaxWidth(0, 12 * 3, 128, dht20_available ? (gpio_out_3_target == 1 ? String(temp, 2) : String(humid, 2)) : "NO_SENSOR");
-    }
-    break;
-  case 4:
-    display.drawStringMaxWidth(0, 0, 128, "RELAY_OUT: " + String(relay_out));
-    display.drawStringMaxWidth(0, 12 * 1, 128, "TARGET="  + labels_relay[relay_target]);
-    break;
-  default:
-    display.drawStringMaxWidth(0, 0, 128, connected ? ("SELF: " + WiFi.localIP().toString()) : ":WIFI_CON_FAILED");
-    display.drawStringMaxWidth(0, 12 * 1, 128, "DEST: " + osc_dest);
-    display.drawStringMaxWidth(0, 12 * 2, 128, "SELF_TAG: " + osc_tag_self);
-    break;
-  }
-  display.display();
-  // --
-
   ecbt.update();
 
-  if (connected) OscWiFi.update();
+  if (current_mode == MODE_ADMIN) {
+    adminModeLoop();
+  } else if (current_mode == MODE_CONFIG) {
+    configModeLoop();
+  } else {
+    if (dht20_available && elapsed - DHT.lastRead() >= 3000) {
+      //  -- READ DATA, TODO:
+      uint32_t start = micros();
+      int status = DHT.read();
+      uint32_t stop = micros();
 
-  // -- GPIO OPs
-  if (relay_target == 1) {
-    if ((hour(_n) % relay_test_interval_hours) == 0 && minute(_n) < 3) {
-      relay_out = 1;
+      switch (status) {
+      case DHT20_OK:
+        humid = DHT.getHumidity();
+        temp = DHT.getTemperature();
+        if (connected)
+          OscWiFi.send(osc_dest, 12000, osc_tag_self, humid, temp);
+        break;
+      case DHT20_ERROR_CHECKSUM:
+        Serial.println("Checksum error");
+        break;
+      case DHT20_ERROR_CONNECT:
+        Serial.println("Connect error");
+        break;
+      case DHT20_MISSING_BYTES:
+        Serial.println("Missing bytes");
+        break;
+      case DHT20_ERROR_BYTES_ALL_ZERO:
+        Serial.println("All bytes read zero");
+        break;
+      case DHT20_ERROR_READ_TIMEOUT:
+        Serial.println("Read time out");
+        break;
+      case DHT20_ERROR_LASTREAD:
+        Serial.println("Error read too fast");
+        break;
+      default:
+        Serial.println("Unknown error");
+        break;
+      }
     }
-  }
-  gpio_in_1 = digitalRead(D3);
-  digitalWrite(RELAY_OUT, gpio_in_1 ? 0 : relay_out);
 
-  // TODO:
-  if (gpio_out_1_target == 1) {
-    if (temp < gpio_out_1_range[0]) gpio_out_1_edge = -1;
-    if (temp > gpio_out_1_range[1]) gpio_out_1_edge = 1;
-    gpio_out_1 = ((temp < gpio_out_1_range[0] || temp < gpio_out_1_range[1]) && gpio_out_1_edge < 1);
-  } else if (gpio_out_1_target == 2) {
-    if (humid < gpio_out_1_range[0]) gpio_out_1_edge = -1;
-    if (humid > gpio_out_1_range[1]) gpio_out_1_edge = 1;
-    gpio_out_1 = ((humid < gpio_out_1_range[0] || humid < gpio_out_1_range[1]) && gpio_out_1_edge < 1);
-  }
+    if (am2301_available && elapsed - lastRead >= 3000) {
+      sensors_event_t t_humidity, t_temp;
+      AHT.getEvent(&t_humidity, &t_temp);
 
-  if (gpio_out_2_target == 1) {
-    if (temp < gpio_out_2_range[0]) gpio_out_2_edge = -1;
-    if (temp > gpio_out_2_range[1]) gpio_out_2_edge = 1;
-    gpio_out_2 = ((temp < gpio_out_2_range[0] || temp < gpio_out_2_range[1]) && gpio_out_2_edge < 1);
-  } else if (gpio_out_2_target == 2) {
-    if (humid < gpio_out_2_range[0]) gpio_out_2_edge = -1;
-    if (humid > gpio_out_2_range[1]) gpio_out_2_edge = 1;
-    gpio_out_2 = ((humid < gpio_out_2_range[0] || humid < gpio_out_2_range[1]) && gpio_out_2_edge < 1);
-  }
+      temp = t_temp.temperature;
+      humid = t_humidity.relative_humidity;
 
-  if (gpio_out_3_target == 1) {
-    if (temp < gpio_out_3_range[0]) gpio_out_3_edge = -1;
-    if (temp > gpio_out_3_range[1]) gpio_out_3_edge = 1;
-    gpio_out_3 = ((temp < gpio_out_3_range[0] || temp < gpio_out_3_range[1]) && gpio_out_3_edge < 1);
-  } else if (gpio_out_3_target == 2) {
-    if (humid < gpio_out_3_range[0]) gpio_out_3_edge = -1;
-    if (humid > gpio_out_3_range[1]) gpio_out_3_edge = 1;
-    gpio_out_3 = ((humid < gpio_out_3_range[0] || humid < gpio_out_3_range[1]) && gpio_out_3_edge < 1);
-  }
+      if (connected)
+        OscWiFi.send(osc_dest, 12000, osc_tag_self, humid, temp);
 
-  digitalWrite(TRIG_OUT_1, gpio_out_1);
-  digitalWrite(TRIG_OUT_2, gpio_out_2);
-  digitalWrite(TRIG_OUT_3, gpio_out_3);
-  // --
+      lastRead = millis();
+    }
+
+    if (elapsed - lastPing >= 5000) {
+      lastPing = elapsed;
+      if (connected)
+        OscWiFi.send(osc_dest, 12000, osc_tag_self + "/ping",
+                     WiFi.localIP().toString());
+    }
+
+    display.clear();
+    display.setFont(ArialMT_Plain_10);
+    display.setTextAlignment(TEXT_ALIGN_LEFT);
+
+    // -- TODO:
+    switch (ecbt.position()) {
+    case 0:
+      if (dht20_available) {
+        display.drawStringMaxWidth(0, 0, 128, "TEMPERATURE: " + String(temp, 2));
+        display.drawStringMaxWidth(0, 12 * 1, 128, "HUMIDITY: " + String(humid, 2));
+        display.drawStringMaxWidth(0, 12 * 2, 128, String(_h) + ":" + (_m < 10 ? "0" : "") + String(_m));
+      } else {
+        display.drawStringMaxWidth(0, 0, 128, "NO_SENSOR");
+        display.drawStringMaxWidth(0, 12 * 1, 128, String(_h) + ":" + (_m < 10 ? "0" : "") + String(_m));
+      }
+      if (!connected) {
+        display.drawStringMaxWidth(0, 12 * 3, 128, ":WIFI_CON_FAILED");
+      }
+      break;
+    case 1:
+      display.drawStringMaxWidth(0, 0, 128, "GPIO_OUT_1: " + String(gpio_out_1));
+      if (gpio_out_1_target > FOLLOW_T_NONE) {
+        display.drawStringMaxWidth(0, 12 * 1, 128, "TARGET=" + labels[gpio_out_1_target]);
+        display.drawStringMaxWidth(0, 12 * 2, 128,
+                                   "LO=" + String(gpio_out_1_range[0], 2) +
+                                   ", HI=" + String(gpio_out_1_range[1], 2));
+        display.drawStringMaxWidth(0, 12 * 3, 128,
+                                   dht20_available
+                                   ? (gpio_out_1_target == 1 ? String(temp, 2) : String(humid, 2))
+                                   : "NO_SENSOR");
+      }
+      break;
+    case 2:
+      display.drawStringMaxWidth(0, 0, 128, "GPIO_OUT_2: " + String(gpio_out_2));
+      if (gpio_out_2_target > FOLLOW_T_NONE) {
+        display.drawStringMaxWidth(0, 12 * 1, 128, "TARGET=" + labels[gpio_out_2_target]);
+        display.drawStringMaxWidth(0, 12 * 2, 128,
+                                   "LO=" + String(gpio_out_2_range[0], 2) +
+                                   ", HI=" + String(gpio_out_2_range[1], 2));
+        display.drawStringMaxWidth(0, 12 * 3, 128,
+                                   dht20_available
+                                   ? (gpio_out_2_target == 1 ? String(temp, 2) : String(humid, 2))
+                                   : "NO_SENSOR");
+      }
+      break;
+    case 3:
+      display.drawStringMaxWidth(0, 0, 128, "GPIO_OUT_3: " + String(gpio_out_3));
+      if (gpio_out_3_target > FOLLOW_T_NONE) {
+        display.drawStringMaxWidth(0, 12 * 1, 128, "TARGET=" + labels[gpio_out_3_target]);
+        display.drawStringMaxWidth(0, 12 * 2, 128,
+                                   "LO=" + String(gpio_out_3_range[0], 2) +
+                                   ", HI=" + String(gpio_out_3_range[1], 2));
+        display.drawStringMaxWidth(0, 12 * 3, 128,
+                                   dht20_available
+                                   ? (gpio_out_3_target == 1 ? String(temp, 2) : String(humid, 2))
+                                   : "NO_SENSOR");
+      }
+      break;
+    case 4:
+      display.drawStringMaxWidth(0, 0, 128, "RELAY_OUT: " + String(gpio_out_relay));
+      display.drawStringMaxWidth(0, 12 * 1, 128,
+                                 "TARGET=" + labels_relay[relay_target]);
+      break;
+    default:
+      display.drawStringMaxWidth(0, 0, 128,
+                                 connected ? ("SELF: " + WiFi.localIP().toString())
+                                 : ":WIFI_CON_FAILED");
+      display.drawStringMaxWidth(0, 12 * 1, 128, "DEST: " + osc_dest);
+      display.drawStringMaxWidth(0, 12 * 2, 128, "SELF_TAG: " + osc_tag_self);
+      display.drawStringMaxWidth(0, 12 * 3, 128, "VERSION: " + String(CHAMBER_IO_VERSION));
+      break;
+    }
+    display.display();
+    // --
+
+    if (connected) OscWiFi.update();
+
+    // -- GPIO ops, TODO:
+    gpio_in_1 = digitalRead(D3);
+
+    if (relay_target == 1) {
+      if ((hour(_n) % relay_test_interval_hours) == 0 && minute(_n) < 3) {
+        gpio_out_relay = 1;
+      }
+    }
+
+    // gpio_out_relay = gpio_in_1 ? 0 : gpio_out_relay;
+    gpio_out_relay = !gpio_in_1 ? 0 : gpio_out_relay;
+
+    if (gpio_out_1_target == FOLLOW_T_TEMP) {
+      if (temp < gpio_out_1_range[0]) gpio_out_1_edge = -1;
+      if (temp > gpio_out_1_range[1]) gpio_out_1_edge = 1;
+      gpio_out_1 = ((temp < gpio_out_1_range[0] || temp < gpio_out_1_range[1]) && gpio_out_1_edge < 1);
+    } else if (gpio_out_1_target == FOLLOW_T_HUMID) {
+      if (humid < gpio_out_1_range[0]) gpio_out_1_edge = -1;
+      if (humid > gpio_out_1_range[1]) gpio_out_1_edge = 1;
+      gpio_out_1 = ((humid < gpio_out_1_range[0] || humid < gpio_out_1_range[1]) && gpio_out_1_edge < 1);
+    }
+
+    if (gpio_out_2_target == FOLLOW_T_TEMP) {
+      if (temp < gpio_out_2_range[0]) gpio_out_2_edge = -1;
+      if (temp > gpio_out_2_range[1]) gpio_out_2_edge = 1;
+      gpio_out_2 = ((temp < gpio_out_2_range[0] || temp < gpio_out_2_range[1]) && gpio_out_2_edge < 1);
+    } else if (gpio_out_2_target == FOLLOW_T_HUMID) {
+      if (humid < gpio_out_2_range[0]) gpio_out_2_edge = -1;
+      if (humid > gpio_out_2_range[1]) gpio_out_2_edge = 1;
+      gpio_out_2 = ((humid < gpio_out_2_range[0] || humid < gpio_out_2_range[1]) && gpio_out_2_edge < 1);
+    }
+
+    if (gpio_out_3_target == FOLLOW_T_TEMP) {
+      if (temp < gpio_out_3_range[0]) gpio_out_3_edge = -1;
+      if (temp > gpio_out_3_range[1]) gpio_out_3_edge = 1;
+      gpio_out_3 = ((temp < gpio_out_3_range[0] || temp < gpio_out_3_range[1]) && gpio_out_3_edge < 1);
+    } else if (gpio_out_3_target == FOLLOW_T_HUMID) {
+      if (humid < gpio_out_3_range[0]) gpio_out_3_edge = -1;
+      if (humid > gpio_out_3_range[1]) gpio_out_3_edge = 1;
+      gpio_out_3 = ((humid < gpio_out_3_range[0] || humid < gpio_out_3_range[1]) && gpio_out_3_edge < 1);
+    }
+
+    digitalWrite(RELAY_OUT, gpio_out_relay);
+    digitalWrite(TRIG_OUT_1, gpio_out_1);
+    digitalWrite(TRIG_OUT_2, gpio_out_2);
+    digitalWrite(TRIG_OUT_3, gpio_out_3);
+    // --
+  }
 }
