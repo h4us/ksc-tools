@@ -12,10 +12,11 @@
 #include <TimeLib.h>
 
 
-#define CHAMBER_IO_VERSION "0.9.9"
+#define CHAMBER_IO_VERSION "0.9.10"
 
 #define XIAO_SDA D4
 #define XIAO_SCL D5
+#define FOLLOW_MODE_N 4
 #define PAGE_AVAILABLE_N 5
 #define CONFIG_AVAILABLE_N 6
 #define RELAY_OUT D6
@@ -67,8 +68,13 @@ uint8_t relay_target = 1;
 int relay_test_interval_hours = 2;
 uint8_t gpio_in_1 = 0;
 
-String labels[] = { "NONE", "TEMPERATURE", "HUMIDITY" };
-String labels_relay[] = {"REMOTE", "INTERNAL", "MANUAL"};
+// TODO:
+int gpio_test_interval_hours = 2;
+int gpio_offset_interval = 40;
+// --
+
+String labels[] = { "NONE", "TEMPERATURE", "HUMIDITY", "TIMER" };
+String labels_relay[] = {"REMOTE", "TIMER", "MANUAL"};
 String labels_config[] = {
   "GPIO_OUT_1 [ LO ]", "GPIO_OUT_1 [ HI ]",
   "GPIO_OUT_2 [ LO ]", "GPIO_OUT_2 [ HI ]",
@@ -82,7 +88,7 @@ enum SubModeLabel { SUBMODE_DEFAULT, SUBMODE_EDIT };
 SubModeLabel current_submode = SUBMODE_DEFAULT;
 uint8_t submodeEditIndex = 0;
 
-enum FollowTarget { FOLLOW_T_NONE, FOLLOW_T_TEMP, FOLLOW_T_HUMID };
+enum FollowTarget { FOLLOW_T_NONE, FOLLOW_T_TEMP, FOLLOW_T_HUMID, FOLLOW_T_TIMER };
 
 bool connected, dht20_available, am2301_available = false;
 
@@ -357,11 +363,11 @@ void defaultModeClickAction(EncoderButton &eb) {
   } else if (eb.clickCount() >= 2) {
     // -- double click: change following target
     if (eb.position() == 1) {
-      gpio_out_1_target = (gpio_out_1_target + 1) % 3;
+      gpio_out_1_target = (gpio_out_1_target + 1) % FOLLOW_MODE_N;
     } else if (eb.position() == 2) {
-      gpio_out_2_target = (gpio_out_2_target + 1) % 3;
+      gpio_out_2_target = (gpio_out_2_target + 1) % FOLLOW_MODE_N;
     } else if (eb.position() == 3) {
-      gpio_out_3_target = (gpio_out_3_target + 1) % 3;
+      gpio_out_3_target = (gpio_out_3_target + 1) % FOLLOW_MODE_N;
     } else if (eb.position() == 4) {
       relay_target = (relay_target + 1) % 3;
     }
@@ -532,7 +538,7 @@ void loop() {
     configModeLoop();
   } else {
     if (dht20_available && elapsed - DHT.lastRead() >= 3000) {
-      //  -- READ DATA, TODO:
+      //  -- Reading & publishing sensor data, TODO:
       uint32_t start = micros();
       int status = DHT.read();
       uint32_t stop = micros();
@@ -589,6 +595,7 @@ void loop() {
     }
 
     if (connected) OscWiFi.update();
+    // --
 
     // -- GPIO ops, TODO:
     gpio_in_1 = digitalRead(D3);
@@ -610,6 +617,8 @@ void loop() {
       if (humid < gpio_out_1_range[0]) gpio_out_1_edge = -1;
       if (humid > gpio_out_1_range[1]) gpio_out_1_edge = 1;
       gpio_out_1 = ((humid < gpio_out_1_range[0] || humid < gpio_out_1_range[1]) && gpio_out_1_edge < 1);
+    } else if (gpio_out_1_target == FOLLOW_T_TIMER) {
+      gpio_out_1 = ((hour(_n) % gpio_test_interval_hours) == 0 && minute(_n) < gpio_offset_interval);
     }
 
     if (gpio_out_2_target == FOLLOW_T_TEMP) {
@@ -620,6 +629,8 @@ void loop() {
       if (humid < gpio_out_2_range[0]) gpio_out_2_edge = -1;
       if (humid > gpio_out_2_range[1]) gpio_out_2_edge = 1;
       gpio_out_2 = ((humid < gpio_out_2_range[0] || humid < gpio_out_2_range[1]) && gpio_out_2_edge < 1);
+    } else if (gpio_out_2_target == FOLLOW_T_TIMER) {
+      gpio_out_2 = ((hour(_n) % gpio_test_interval_hours) == 0 && minute(_n) < gpio_offset_interval);
     }
 
     if (gpio_out_3_target == FOLLOW_T_TEMP) {
@@ -630,6 +641,8 @@ void loop() {
       if (humid < gpio_out_3_range[0]) gpio_out_3_edge = -1;
       if (humid > gpio_out_3_range[1]) gpio_out_3_edge = 1;
       gpio_out_3 = ((humid < gpio_out_3_range[0] || humid < gpio_out_3_range[1]) && gpio_out_3_edge < 1);
+    } else if (gpio_out_3_target == FOLLOW_T_TIMER) {
+      gpio_out_2 = ((hour(_n) % gpio_test_interval_hours) == 0 && minute(_n) < gpio_offset_interval);
     }
 
     digitalWrite(RELAY_OUT, gpio_out_relay);
@@ -638,7 +651,7 @@ void loop() {
     digitalWrite(TRIG_OUT_3, gpio_out_3);
     // --
 
-    // -- TODO:
+    // -- Displays, TODO:
     display.clear();
     display.setFont(ArialMT_Plain_10);
     display.setTextAlignment(TEXT_ALIGN_LEFT);
